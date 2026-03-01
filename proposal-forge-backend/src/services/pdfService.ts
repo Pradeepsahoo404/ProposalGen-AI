@@ -1,18 +1,22 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-const pdfMake = require("pdfmake/build/pdfmake");
-if (typeof globalThis !== "undefined") {
-  (globalThis as Record<string, unknown>).pdfMake = pdfMake;
+// Use server-side PdfPrinter so fonts load via Buffers (Node fs is not the vfs).
+const PdfPrinter = require("pdfmake/src/printer");
+const vfsFonts = require("pdfmake/build/vfs_fonts") as Record<string, string>;
+
+function toBuffer(base64: string): Buffer {
+  return Buffer.from(base64, "base64");
 }
-const vfsFonts = require("pdfmake/build/vfs_fonts");
-pdfMake.addVirtualFileSystem(vfsFonts);
-pdfMake.addFonts({
+
+const fonts = {
   Roboto: {
-    normal: "Roboto-Regular.ttf",
-    bold: "Roboto-Medium.ttf",
-    italics: "Roboto-Italic.ttf",
-    bolditalics: "Roboto-MediumItalic.ttf",
+    normal: toBuffer(vfsFonts["Roboto-Regular.ttf"]),
+    bold: toBuffer(vfsFonts["Roboto-Medium.ttf"]),
+    italics: toBuffer(vfsFonts["Roboto-Italic.ttf"]),
+    bolditalics: toBuffer(vfsFonts["Roboto-MediumItalic.ttf"]),
   },
-});
+};
+
+const printer = new PdfPrinter(fonts);
 
 export type ProposalDataForPdf = {
   client_summary?: string;
@@ -171,8 +175,21 @@ export function generatePdf(
         content,
       };
 
-      const pdfDoc = pdfMake.createPdf(docDefinition);
-      pdfDoc.getBuffer((buffer: Buffer) => resolve(buffer), (err: Error) => reject(err));
+      const pdfDoc = printer.createPdfKitDocument(docDefinition, {});
+      const chunks: Buffer[] = [];
+
+      pdfDoc.on("data", (chunk: Buffer) => chunks.push(chunk));
+      pdfDoc.on("end", () => {
+        const buffer = Buffer.concat(chunks);
+        if (!buffer || buffer.length === 0) {
+          reject(new Error("PDF generation produced empty output"));
+          return;
+        }
+        resolve(buffer);
+      });
+      pdfDoc.on("error", (err: Error) => reject(err));
+
+      pdfDoc.end();
     } catch (err) {
       reject(err);
     }

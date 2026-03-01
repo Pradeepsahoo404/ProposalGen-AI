@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useTheme } from "next-themes";
 import { LogOut, Settings, ChevronDown, Sun, Moon, KeyRound } from "lucide-react";
 import { toast } from "sonner";
@@ -28,8 +29,11 @@ export function Navbar() {
       <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
         <Link
           href="/"
-          className="flex items-center gap-2.5 font-bold text-slate-900 dark:text-slate-100 transition-colors hover:text-primary text-lg tracking-tight"
+          className="flex items-center gap-3 font-bold text-slate-900 dark:text-slate-100 transition-colors hover:opacity-90 text-lg tracking-tight"
         >
+          <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-blue-600 text-white shadow-md overflow-hidden">
+            <Image src="/logo.svg" alt="" width={20} height={20} className="brightness-0 invert" aria-hidden />
+          </span>
           <span className="bg-gradient-to-br from-primary to-blue-600 bg-clip-text text-transparent">{APP_NAME}</span>
         </Link>
         <div className="flex items-center gap-2 sm:gap-4">

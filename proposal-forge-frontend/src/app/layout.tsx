@@ -8,6 +8,10 @@ import { APP_NAME } from "@/lib/constants";
 export const metadata: Metadata = {
   title: APP_NAME,
   description: "AI-powered Sales Proposal SaaS",
+  icons: {
+    icon: "/logo.svg",
+    apple: "/logo.svg",
+  },
 };
 
 export default function RootLayout({
