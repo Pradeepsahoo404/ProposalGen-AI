@@ -12,6 +12,7 @@ const proposalSchema = new mongoose.Schema(
       default: "draft",
     },
     content: { type: mongoose.Schema.Types.Mixed },
+    templateId: { type: String, default: "modern-blue" },
     shareToken: { type: String, unique: true, sparse: true },
     views: { type: Number, default: 0 },
     sharedAt: { type: Date },

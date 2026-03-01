@@ -9,7 +9,9 @@ import {
   generatePdf,
   type ProposalDataForPdf,
   type BrandingForPdf,
+  type TemplateStyleForPdf,
 } from "../services/pdfService";
+import { Template } from "../models/Template";
 
 const VALID_STATS_PERIODS = ["week", "month", "6month", "year"] as const;
 
@@ -109,13 +111,18 @@ export async function createProposal(req: Request, res: Response) {
 export async function updateProposal(req: Request, res: Response) {
   try {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    const updated = await proposalService.update(
+    const result = await proposalService.update(
       req.params.id,
       req.body,
       req.user
     );
-    if (!updated) return res.status(404).json({ error: "Proposal not found" });
-    return res.json(updated);
+    if (!result.ok) {
+      if (result.reason === "forbidden") {
+        return res.status(403).json({ error: "Proposal sent – editing is locked" });
+      }
+      return res.status(404).json({ error: "Proposal not found" });
+    }
+    return res.json(result.doc);
   } catch (err) {
     console.error("updateProposal", err);
     return res.status(500).json({ error: "Failed to update proposal" });
@@ -233,10 +240,22 @@ export async function downloadProposalHandler(req: Request, res: Response) {
   try {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
-    const { proposalData } = req.body;
+    const proposalData = (req.body.proposalData && typeof req.body.proposalData === "object")
+      ? req.body.proposalData
+      : (typeof req.body === "object" && req.body !== null && !req.body.proposalData ? req.body : null);
     if (!proposalData || typeof proposalData !== "object") {
       return res.status(400).json({ error: "proposalData (object) is required" });
     }
+
+    const templateId = typeof req.body.templateId === "string" ? req.body.templateId
+      : typeof req.body.selectedTemplateId === "string" ? req.body.selectedTemplateId
+      : "modern-blue";
+    const templateDoc = await Template.findOne({ id: templateId }).lean();
+    const styleOverrides = (templateDoc as { styleOverrides?: Record<string, unknown> })?.styleOverrides ?? {};
+    const templateStyle: TemplateStyleForPdf = {
+      primaryColor: typeof styleOverrides.primaryColor === "string" ? styleOverrides.primaryColor : undefined,
+      fontFamily: typeof styleOverrides.fontFamily === "string" ? styleOverrides.fontFamily : undefined,
+    };
 
     const userDoc = await User.findById(req.user.id).select("settings").lean();
     const settings = (userDoc as { settings?: { logoUrl?: string; companyName?: string; termsTemplate?: string } })?.settings ?? {};
@@ -246,7 +265,7 @@ export async function downloadProposalHandler(req: Request, res: Response) {
       termsTemplate: settings.termsTemplate ?? null,
     };
 
-    const pdfBuffer = await generatePdf(proposalData as ProposalDataForPdf, branding);
+    const pdfBuffer = await generatePdf(proposalData as ProposalDataForPdf, branding, templateStyle);
     const date = new Date().toISOString().slice(0, 10);
     const filename = `Proposal_${date}.pdf`;
 
@@ -291,6 +310,24 @@ export async function shareProposalHandler(req: Request, res: Response) {
   }
 }
 
+export async function putTemplateHandler(req: Request, res: Response) {
+  try {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const templateId = typeof req.body.templateId === "string" ? req.body.templateId.trim() : "";
+    if (!templateId) return res.status(400).json({ error: "templateId is required" });
+    const updated = await proposalService.updateTemplate(req.params.id, templateId, req.user);
+    if (!updated) {
+      const doc = await proposalService.findById(req.params.id, req.user);
+      if (!doc) return res.status(404).json({ error: "Proposal not found" });
+      return res.status(403).json({ error: "Cannot change template after sending" });
+    }
+    return res.json(updated);
+  } catch (err) {
+    console.error("putTemplate", err);
+    return res.status(500).json({ error: "Failed to update template" });
+  }
+}
+
 export async function viewSharedHandler(req: Request, res: Response) {
   try {
     const token = req.params.token;
@@ -306,12 +343,14 @@ export async function viewSharedHandler(req: Request, res: Response) {
       content?: unknown;
       views?: number;
       sharedAt?: Date;
+      templateId?: string;
     };
     return res.json({
       title: d.title,
       content: d.content,
       views: d.views ?? 0,
       sharedAt: d.sharedAt?.toISOString(),
+      templateId: d.templateId ?? "modern-blue",
     });
   } catch (err) {
     console.error("viewShared error:", err);

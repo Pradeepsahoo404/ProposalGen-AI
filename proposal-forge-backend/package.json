@@ -6,7 +6,8 @@
     "dev": "nodemon",
     "build": "tsc",
     "start": "node dist/server.js",
-    "seed": "ts-node src/seed.ts"
+    "seed": "ts-node src/seed.ts",
+    "seed:templates": "ts-node src/seedTemplatesRunner.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

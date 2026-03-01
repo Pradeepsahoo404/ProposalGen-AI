@@ -3,6 +3,7 @@ import cors from "cors";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fileUpload = require("express-fileupload");
 import { config, connectDB } from "./config";
+import { seedTemplates } from "./seedTemplates";
 import routes from "./routes";
 import uploadRoutes from "./routes/uploadRoutes";
 import { auth } from "./middleware/auth";
@@ -23,6 +24,7 @@ app.use(errorHandler);
 
 async function start() {
   await connectDB();
+  await seedTemplates();
   app.listen(config.port, () => {
     console.log(`Server running on port ${config.port}`);
   });

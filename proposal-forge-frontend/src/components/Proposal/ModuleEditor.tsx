@@ -40,7 +40,10 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ProposalPreview } from "@/components/Proposal/ProposalPreview";
+import { TemplateSelector } from "@/components/Proposal/TemplateSelector";
 import { ShareProposalDialog } from "@/components/Proposal/ShareProposalDialog";
+import { DEFAULT_TEMPLATE_ID } from "@/lib/proposal-templates";
+import type { ProposalTemplateId } from "@/lib/proposal-templates";
 import {
   Dialog,
   DialogContent,
@@ -93,6 +96,8 @@ type ModuleEditorProps = {
   generatedData?: GeneratedProposalData | null;
   proposalId?: string | null;
   initialFormData?: ProposalEditorFormData | null;
+  /** Template id saved with proposal; loaded from content.selectedTemplateId when editing */
+  initialSelectedTemplateId?: string | null;
   proposalTitle?: string;
   proposalStatus?: string;
   onBack?: () => void;
@@ -141,6 +146,7 @@ export function ModuleEditor({
   generatedData,
   proposalId,
   initialFormData,
+  initialSelectedTemplateId,
   proposalTitle: proposalTitleProp,
   proposalStatus = "draft",
   onBack,
@@ -149,6 +155,9 @@ export function ModuleEditor({
   const queryClient = useQueryClient();
   const initial = initialFormData ?? (generatedData ? generatedToEditorFormData(generatedData) : undefined);
   const [compareMode, setCompareMode] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<ProposalTemplateId>(
+    (initialSelectedTemplateId as ProposalTemplateId) ?? DEFAULT_TEMPLATE_ID
+  );
   const [lastAutoSave, setLastAutoSave] = useState<Date | null>(null);
   const [lastServerSave, setLastServerSave] = useState<Date | null>(null);
   const [unsavedHighlight, setUnsavedHighlight] = useState(false);
@@ -180,6 +189,12 @@ export function ModuleEditor({
   useEffect(() => {
     setLocalStatus(proposalStatus);
   }, [proposalStatus]);
+
+  useEffect(() => {
+    if (initialSelectedTemplateId && initialSelectedTemplateId !== selectedTemplateId) {
+      setSelectedTemplateId(initialSelectedTemplateId as ProposalTemplateId);
+    }
+  }, [initialSelectedTemplateId]);
 
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -281,7 +296,8 @@ export function ModuleEditor({
     syncFormToUndo();
     const values = getValues();
     const title = getProposalTitle();
-    const payload = { title, content: values as unknown as Record<string, unknown>, clientName: "" };
+    const content = { ...(values as unknown as Record<string, unknown>), selectedTemplateId };
+    const payload = { title, content, clientName: "" };
     setIsSaving(true);
     try {
       if (proposalId) {
@@ -408,7 +424,7 @@ export function ModuleEditor({
       if (!form.formState.isDirty) return;
       const values = getValues();
       const title = getProposalTitle();
-      api.put(`/api/proposals/${proposalId}`, { title, content: values }).then(() => {
+      api.put(`/api/proposals/${proposalId}`, { title, content: { ...values, selectedTemplateId } }).then(() => {
         setLastServerSave(new Date());
         form.reset(values);
         toast.success("Auto-saved", { duration: 2000 });
@@ -482,7 +498,7 @@ export function ModuleEditor({
     if (isDownloading || !hasContent()) return;
     setIsDownloading(true);
     try {
-      const proposalData = getValues();
+      const proposalData = { ...getValues(), selectedTemplateId } as unknown as Record<string, unknown>;
       const res = await api.post("/api/proposals/download-proposal", proposalData, {
         responseType: "blob",
       });
@@ -528,6 +544,24 @@ export function ModuleEditor({
   const watchedValues = watch();
   const currentData = (watchedValues ?? getValues()) as ProposalEditorFormData;
   const previewData = getValues() as ProposalEditorFormData;
+  const isViewOnly = false;
+
+  const handleTemplateSelect = useCallback(
+    (id: ProposalTemplateId) => {
+      const prev = selectedTemplateId;
+      setSelectedTemplateId(id);
+      if (proposalId) {
+        api
+          .put(`/api/proposals/${proposalId}/template`, { templateId: id })
+          .then(() => toast.success("Template applied", { style: { borderLeft: "4px solid #22c55e" } }))
+          .catch(() => {
+            setSelectedTemplateId(prev);
+            toast.error("Could not update template", { style: { borderLeft: "4px solid #ef4444" } });
+          });
+      }
+    },
+    [proposalId, selectedTemplateId]
+  );
 
   return (
     <div className={cn("space-y-0 pb-28 md:pb-24", unsavedHighlight && "animate-pulse")}>
@@ -570,19 +604,19 @@ export function ModuleEditor({
               </Badge>
             )}
             <div className="flex items-center gap-2 shrink-0">
-              <Label htmlFor="compare-mode-toolbar" className="text-sm text-muted-foreground cursor-pointer whitespace-nowrap">
-                Compare (Original vs Edited)
-              </Label>
-              <Switch id="compare-mode-toolbar" checked={compareMode} onCheckedChange={setCompareMode} className="focus-visible:ring-2 focus-visible:ring-[#3b82f6]" />
-            </div>
+                <Label htmlFor="compare-mode-toolbar" className="text-sm text-muted-foreground cursor-pointer whitespace-nowrap">
+                  Compare (Original vs Edited)
+                </Label>
+                <Switch id="compare-mode-toolbar" checked={compareMode} onCheckedChange={setCompareMode} disabled={isViewOnly} className="focus-visible:ring-2 focus-visible:ring-[#3b82f6]" />
+              </div>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 border-r border-border pr-2">
-            <Button size="sm" variant="ghost" className="h-9 w-9 p-0 rounded-lg" onClick={handleUndo} disabled={!undoRedo.canUndo} type="button" title="Undo">
+            <Button size="sm" variant="ghost" className="h-9 w-9 p-0 rounded-lg" onClick={handleUndo} disabled={!undoRedo.canUndo || isViewOnly} type="button" title="Undo">
               <Undo2 className="h-4 w-4" />
             </Button>
-            <Button size="sm" variant="ghost" className="h-9 w-9 p-0 rounded-lg" onClick={handleRedo} disabled={!undoRedo.canRedo} type="button" title="Redo">
+            <Button size="sm" variant="ghost" className="h-9 w-9 p-0 rounded-lg" onClick={handleRedo} disabled={!undoRedo.canRedo || isViewOnly} type="button" title="Redo">
               <Redo2 className="h-4 w-4" />
             </Button>
             <Button size="sm" variant="ghost" className="h-9 w-9 p-0 rounded-lg" onClick={handleExportJson} title="Export JSON">
@@ -614,7 +648,7 @@ export function ModuleEditor({
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <div className="flex flex-col md:flex-row md:gap-6 lg:gap-8 md:items-stretch">
-        <div className="min-w-0 md:w-[38%] lg:w-[36%] md:shrink-0 md:max-w-xl space-y-4 p-4 md:p-6 md:pr-4">
+        <div className={cn("min-w-0 md:w-[38%] lg:w-[36%] md:shrink-0 md:max-w-xl space-y-4 p-4 md:p-6 md:pr-4", isViewOnly && "opacity-70")}>
           <Accordion type="multiple" defaultValue={["summary", "modules", "roadmap", "pricing"]}>
             <AccordionItem value="summary">
               <AccordionTrigger>Client Summary</AccordionTrigger>
@@ -625,6 +659,7 @@ export function ModuleEditor({
                     {...form.register("client_summary")}
                     className="mt-1 min-h-[120px] rounded-xl border-slate-200 focus:ring-[#3b82f6]"
                     placeholder="Client needs and context..."
+                    readOnly={isViewOnly}
                   />
                 </div>
                 <div>
@@ -633,6 +668,7 @@ export function ModuleEditor({
                     {...form.register("summary_comment")}
                     className="mt-1 min-h-[60px] rounded-xl"
                     placeholder="Internal notes..."
+                    readOnly={isViewOnly}
                   />
                 </div>
               </AccordionContent>
@@ -646,7 +682,7 @@ export function ModuleEditor({
                     const mod = form.watch(`ai_enhanced_modules.${i}`);
                     const accepted = mod?.accepted ?? false;
                     return (
-                      <SortableItem key={field.id} id={`mod-${i}`}>
+                      <SortableItem key={field.id} id={`mod-${i}`} disabled={isViewOnly}>
                         <Card
                           className={cn(
                             "overflow-hidden transition-all hover:shadow-lg",
@@ -679,6 +715,7 @@ export function ModuleEditor({
                                     form.setValue(`ai_enhanced_modules.${i}.accepted`, !!v);
                                     setPreviewVersion((prev) => prev + 1);
                                   }}
+                                  disabled={isViewOnly}
                                 />
                                 <span className="text-xs text-muted-foreground">Accept</span>
                               </div>
@@ -694,6 +731,7 @@ export function ModuleEditor({
                                 <Input
                                   {...form.register(`ai_enhanced_modules.${i}.enhanced_name`)}
                                   className="mt-1 rounded-lg"
+                                  readOnly={isViewOnly}
                                 />
                               </div>
                             )}
@@ -709,6 +747,7 @@ export function ModuleEditor({
                     {...form.register("modules_comment")}
                     className="mt-1 min-h-[60px] rounded-xl"
                     placeholder="Notes on modules..."
+                    readOnly={isViewOnly}
                   />
                 </div>
               </AccordionContent>
@@ -719,7 +758,7 @@ export function ModuleEditor({
               <AccordionContent className="space-y-4">
                 <SortableContext items={roadmapFields.fields.map((_, i) => `road-${i}`)}>
                   {roadmapFields.fields.map((field, i) => (
-                    <SortableItem key={field.id} id={`road-${i}`}>
+                    <SortableItem key={field.id} id={`road-${i}`} disabled={isViewOnly}>
                       <Card className="overflow-hidden transition-shadow hover:shadow-lg">
                         <CardContent className="pt-4 space-y-3">
                           <div className="flex items-center gap-2">
@@ -727,24 +766,28 @@ export function ModuleEditor({
                               {...form.register(`phased_roadmap.${i}.phase`)}
                               placeholder="Phase name"
                               className="flex-1 rounded-lg"
+                              readOnly={isViewOnly}
                             />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => {
-                                roadmapFields.remove(i);
-                                setPreviewVersion((v) => v + 1);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {!isViewOnly && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  roadmapFields.remove(i);
+                                  setPreviewVersion((v) => v + 1);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                           <Textarea
                             {...form.register(`phased_roadmap.${i}.description`)}
                             placeholder="Description"
                             className="min-h-[80px] rounded-lg"
+                            readOnly={isViewOnly}
                           />
                           <div>
                             <div className="flex justify-between text-sm">
@@ -763,6 +806,7 @@ export function ModuleEditor({
                               max={52}
                               step={1}
                               className="mt-2"
+                              disabled={isViewOnly}
                             />
                           </div>
                         </CardContent>
@@ -770,25 +814,28 @@ export function ModuleEditor({
                     </SortableItem>
                   ))}
                 </SortableContext>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => {
-                    roadmapFields.append({ phase: "", description: "", duration_weeks: 4 });
-                    setPreviewVersion((v) => v + 1);
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add phase
-                </Button>
+                {!isViewOnly && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      roadmapFields.append({ phase: "", description: "", duration_weeks: 4 });
+                      setPreviewVersion((v) => v + 1);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add phase
+                  </Button>
+                )}
                 <div>
                   <Label className="text-muted-foreground">Section comment</Label>
                   <Textarea
                     {...form.register("roadmap_comment")}
                     className="mt-1 min-h-[60px] rounded-xl"
                     placeholder="Notes on roadmap..."
+                    readOnly={isViewOnly}
                   />
                 </div>
               </AccordionContent>
@@ -803,26 +850,29 @@ export function ModuleEditor({
                   const discount = form.watch(`pricing_options.${optIndex}.discount_percent`) ?? 0;
                   const finalTotal = total * (1 - discount / 100);
                   return (
-                    <SortableItem key={field.id} id={`price-${optIndex}`}>
+                    <SortableItem key={field.id} id={`price-${optIndex}`} disabled={isViewOnly}>
                     <Card className="overflow-hidden transition-shadow hover:shadow-lg">
                       <CardHeader className="py-3 flex flex-row items-center gap-2">
                         <Input
                           {...form.register(`pricing_options.${optIndex}.option_name`)}
                           placeholder="Option name"
                           className="flex-1 rounded-lg"
+                          readOnly={isViewOnly}
                         />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive"
-                          onClick={() => {
-                            pricingFields.remove(optIndex);
-                            setPreviewVersion((v) => v + 1);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {!isViewOnly && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive"
+                            onClick={() => {
+                              pricingFields.remove(optIndex);
+                              setPreviewVersion((v) => v + 1);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </CardHeader>
                       <CardContent className="pt-0 space-y-3">
                         <div className="flex justify-between text-sm">
@@ -838,6 +888,7 @@ export function ModuleEditor({
                           min={0}
                           max={50}
                           step={5}
+                          disabled={isViewOnly}
                         />
                         <p className="text-sm">
                           Total: ${total.toLocaleString()} →{" "}
@@ -863,6 +914,7 @@ export function ModuleEditor({
                             setPreviewVersion((v) => v + 1);
                           }}
                           rows={form.watch(`pricing_options.${optIndex}.breakdown`) ?? []}
+                          readOnly={isViewOnly}
                         />
                       </CardContent>
                     </Card>
@@ -870,30 +922,33 @@ export function ModuleEditor({
                   );
                 })}
                 </SortableContext>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => {
-                    pricingFields.append({
-                      option_name: "",
-                      total_price_usd: 0,
-                      breakdown: [{ item: "", cost_usd: 0 }],
-                      discount_percent: 0,
-                    });
-                    setPreviewVersion((v) => v + 1);
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add option
-                </Button>
+                {!isViewOnly && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      pricingFields.append({
+                        option_name: "",
+                        total_price_usd: 0,
+                        breakdown: [{ item: "", cost_usd: 0 }],
+                        discount_percent: 0,
+                      });
+                      setPreviewVersion((v) => v + 1);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add option
+                  </Button>
+                )}
                 <div>
                   <Label className="text-muted-foreground">Section comment</Label>
                   <Textarea
                     {...form.register("pricing_comment")}
                     className="mt-1 min-h-[60px] rounded-xl"
                     placeholder="Notes on pricing..."
+                    readOnly={isViewOnly}
                   />
                 </div>
               </AccordionContent>
@@ -913,18 +968,25 @@ export function ModuleEditor({
         </div>
 
         <div id="live-preview-section" className="min-w-0 flex-1 md:min-h-[80vh] md:sticky md:top-24 md:self-start flex flex-col px-4 pb-6 md:px-0 md:pb-0">
-          <div className="rounded-2xl border border-border bg-white dark:bg-card shadow-2xl overflow-hidden min-h-[70vh] md:min-h-[80vh] flex flex-col transition-opacity duration-150">
-            <div className="border-b border-border bg-slate-50/80 dark:bg-slate-900/50 px-5 py-3 shrink-0">
-              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200">
+          <div className="rounded-2xl border border-slate-200/90 dark:border-slate-700/90 bg-white dark:bg-card shadow-lg min-h-[70vh] md:min-h-[80vh] flex flex-col transition-all duration-200 overflow-hidden">
+            <div className="flex-shrink-0 overflow-visible min-h-[160px]">
+              <TemplateSelector
+                selectedId={selectedTemplateId}
+                onSelect={handleTemplateSelect}
+              />
+            </div>
+            <div className="border-b border-slate-200/80 dark:border-slate-700/80 bg-slate-50/90 dark:bg-slate-900/40 px-5 py-3 shrink-0">
+              <h3 className="text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-200">
                 Live Preview
               </h3>
             </div>
-            <div className="flex-1 overflow-auto p-6 md:p-8 min-h-0">
+            <div className="flex-1 overflow-auto p-6 md:p-8 min-h-0 bg-white dark:bg-slate-950/30">
               <ProposalPreview
                 key={previewVersion}
                 data={previewData}
                 originalData={compareMode ? initial : undefined}
                 documentLayout={true}
+                selectedTemplateId={selectedTemplateId}
               />
             </div>
           </div>
@@ -967,7 +1029,13 @@ export function ModuleEditor({
             </div>
           </DialogHeader>
           <div className="flex-1 overflow-auto p-6">
-            <ProposalPreview key={previewVersion} data={previewData} originalData={compareMode ? initial : undefined} documentLayout={true} />
+            <ProposalPreview
+              key={previewVersion}
+              data={previewData}
+              originalData={compareMode ? initial : undefined}
+              documentLayout={true}
+              selectedTemplateId={selectedTemplateId}
+            />
           </div>
         </DialogContent>
       </Dialog>
@@ -980,7 +1048,7 @@ export function ModuleEditor({
           hasContent()
             ? {
                 title: (currentData?.client_summary?.slice(0, 60) || "Proposal").trim() || "Proposal",
-                content: getValues() as unknown as Record<string, unknown>,
+                content: { ...(getValues() as unknown as Record<string, unknown>), selectedTemplateId },
               }
             : undefined
         }
@@ -996,7 +1064,7 @@ export function ModuleEditor({
 
       <div className="print:hidden fixed bottom-0 left-0 right-0 z-40 flex flex-wrap items-center justify-between gap-4 bg-gradient-to-t from-background to-background/95 border-t border-border p-4 shadow-lg">
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2 rounded-xl focus-visible:ring-2 focus-visible:ring-[#3b82f6]" onClick={handleRegenerate} disabled={isRegenerating}>
+          <Button variant="outline" size="sm" className="gap-2 rounded-xl focus-visible:ring-2 focus-visible:ring-[#3b82f6]" onClick={handleRegenerate} disabled={isRegenerating || isViewOnly}>
             {isRegenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             Regenerate AI
           </Button>
@@ -1006,7 +1074,7 @@ export function ModuleEditor({
           </Button>
         </div>
         <div className="order-last w-full md:order-none md:w-auto flex justify-center">
-          <Button size="lg" className="gap-2 rounded-xl bg-[#3b82f6] hover:bg-[#2563eb] shadow-md focus-visible:ring-2 focus-visible:ring-[#3b82f6] w-full md:w-auto min-w-[140px]" onClick={handleSaveDraft} disabled={isSaving}>
+          <Button size="lg" className="gap-2 rounded-xl bg-[#3b82f6] hover:bg-[#2563eb] shadow-md focus-visible:ring-2 focus-visible:ring-[#3b82f6] w-full md:w-auto min-w-[140px]" onClick={handleSaveDraft} disabled={isSaving || isViewOnly}>
             {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
             Save Draft
           </Button>
@@ -1080,12 +1148,14 @@ function PricingBreakdownTable({
   removeRow,
   appendRow,
   rows,
+  readOnly = false,
 }: {
   name: `pricing_options.${number}.breakdown`;
   register: ReturnType<typeof useForm<ProposalEditorFormData>>["register"];
   removeRow: (index: number) => void;
   appendRow: () => void;
   rows: { item: string; cost_usd: number }[];
+  readOnly?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -1095,7 +1165,7 @@ function PricingBreakdownTable({
           <tr className="bg-slate-100 dark:bg-slate-800">
             <th className="text-left p-2">Item</th>
             <th className="text-left p-2">Cost ($)</th>
-            <th className="w-10" />
+            {!readOnly && <th className="w-10" />}
           </tr>
         </thead>
         <tbody>
@@ -1106,6 +1176,7 @@ function PricingBreakdownTable({
                   {...register(`${name}.${i}.item`)}
                   className="h-8 border-0 bg-transparent"
                   placeholder="Item"
+                  readOnly={readOnly}
                 />
               </td>
               <td className="p-1">
@@ -1114,28 +1185,33 @@ function PricingBreakdownTable({
                   {...register(`${name}.${i}.cost_usd`, { valueAsNumber: true })}
                   className="h-8 border-0 bg-transparent w-24"
                   placeholder="0"
+                  readOnly={readOnly}
                 />
               </td>
-              <td className="p-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive"
-                  onClick={() => removeRow(i)}
-                  disabled={rows.length <= 1}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </td>
+              {!readOnly && (
+                <td className="p-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive"
+                    onClick={() => removeRow(i)}
+                    disabled={rows.length <= 1}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
-      <Button type="button" variant="outline" size="sm" className="gap-1" onClick={appendRow}>
-        <Plus className="h-3 w-3" />
-        Add row
-      </Button>
+      {!readOnly && (
+        <Button type="button" variant="outline" size="sm" className="gap-1" onClick={appendRow}>
+          <Plus className="h-3 w-3" />
+          Add row
+        </Button>
+      )}
     </div>
   );
 }

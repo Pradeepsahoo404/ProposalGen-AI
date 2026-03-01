@@ -12,9 +12,11 @@ type SortableItemProps = {
   className?: string;
   /** Optional: attach drag listeners to a handle only; if false, whole card is draggable */
   useHandle?: boolean;
+  /** When true, hide drag handle and disable reordering (e.g. proposal sent – view only) */
+  disabled?: boolean;
 };
 
-export function SortableItem({ id, children, className, useHandle = true }: SortableItemProps) {
+export function SortableItem({ id, children, className, useHandle = true, disabled = false }: SortableItemProps) {
   const {
     attributes,
     listeners,
@@ -41,25 +43,30 @@ export function SortableItem({ id, children, className, useHandle = true }: Sort
       style={style}
       className={cn(
         "rounded-xl transition-shadow duration-200",
-        isDragging && "opacity-90 scale-[1.02] shadow-xl z-50 ring-2 ring-[#3b82f6] ring-offset-2 bg-card",
+        isDragging && !disabled && "opacity-90 scale-[1.02] shadow-xl z-50 ring-2 ring-[#3b82f6] ring-offset-2 bg-card",
+        disabled && "opacity-95",
         className
       )}
     >
       {useHandle ? (
         <div className="flex items-start gap-2">
-          <button
-            type="button"
-            className="mt-1 p-1 rounded cursor-grab active:cursor-grabbing touch-none text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
-            {...attributes}
-            {...listeners}
-            aria-label="Drag to reorder"
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
+          {!disabled ? (
+            <button
+              type="button"
+              className="mt-1 p-1 rounded cursor-grab active:cursor-grabbing touch-none text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors"
+              {...attributes}
+              {...listeners}
+              aria-label="Drag to reorder"
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+          ) : (
+            <div className="mt-1 w-6 shrink-0" aria-hidden />
+          )}
           <div className="flex-1 min-w-0">{children}</div>
         </div>
       ) : (
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+        <div {...(disabled ? {} : { ...attributes, ...listeners })} className={cn(!disabled && "cursor-grab active:cursor-grabbing")}>
           {children}
         </div>
       )}

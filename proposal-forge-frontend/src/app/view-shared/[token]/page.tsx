@@ -11,15 +11,18 @@ export default function ViewSharedPage() {
   const params = useParams();
   const token = typeof params?.token === "string" ? params.token : "";
 
+  type ViewSharedResponse = {
+    title: string;
+    content?: ProposalEditorFormData;
+    views?: number;
+    sharedAt?: string;
+    templateId?: string;
+  };
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["view-shared", token],
     queryFn: async () => {
-      const res = await api.get<{
-        title: string;
-        content?: ProposalEditorFormData;
-        views?: number;
-        sharedAt?: string;
-      }>(`/api/view-shared/${token}`);
+      const res = await api.get<ViewSharedResponse>(`/api/view-shared/${token}`);
       return res.data;
     },
     enabled: !!token,
@@ -53,7 +56,7 @@ export default function ViewSharedPage() {
     );
   }
 
-  const content = data.content as ProposalEditorFormData | undefined;
+  const content = data.content as (ProposalEditorFormData & { selectedTemplateId?: string }) | undefined;
   if (!content) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-50 to-background dark:from-slate-950 dark:to-background p-6">
@@ -61,6 +64,10 @@ export default function ViewSharedPage() {
       </div>
     );
   }
+
+  const selectedTemplateId =
+    (typeof data.templateId === "string" ? data.templateId : undefined) ??
+    (typeof content.selectedTemplateId === "string" ? content.selectedTemplateId : undefined);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50/80 to-background dark:from-slate-950/80 dark:to-background py-8 px-4">
@@ -75,7 +82,11 @@ export default function ViewSharedPage() {
             </span>
           )}
         </div>
-        <ProposalPreview data={content} documentLayout={true} />
+        <ProposalPreview
+          data={content}
+          documentLayout={true}
+          selectedTemplateId={selectedTemplateId ?? "modern-blue"}
+        />
       </div>
     </div>
   );

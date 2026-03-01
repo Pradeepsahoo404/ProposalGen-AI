@@ -1,14 +1,21 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
+import React, { useMemo, useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
+
+const ReactMarkdown = dynamic(
+  () => import("react-markdown").then((mod) => mod.default),
+  { ssr: false }
+);
 import { FileQuestion } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ProposalEditorFormData } from "@/types/proposal-editor";
 import { RoadmapTimeline } from "@/components/Proposal/RoadmapTimeline";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { getTemplateTheme, DEFAULT_TEMPLATE_ID } from "@/lib/proposal-templates";
+import type { ProposalTemplateTheme } from "@/lib/proposal-templates";
 
 /** Strong guard: true when all major proposal fields are empty (no content to show). */
 export function isProposalDataEmpty(data: ProposalEditorFormData | null | undefined): boolean {
@@ -40,6 +47,8 @@ type ProposalPreviewProps = {
   documentLayout?: boolean;
   /** Optional branding override (e.g. from parent). If not set, fetched from /api/auth/me */
   branding?: PreviewBranding | null;
+  /** Selected template id for styling (header, layout, colors, fonts). Default: modern-blue */
+  selectedTemplateId?: string | null;
   className?: string;
 };
 
@@ -63,9 +72,11 @@ export function ProposalPreview({
   originalData,
   documentLayout = true,
   branding: brandingProp,
+  selectedTemplateId = DEFAULT_TEMPLATE_ID,
   className,
 }: ProposalPreviewProps) {
   const compareMode = !!originalData;
+  const theme = getTemplateTheme(selectedTemplateId ?? DEFAULT_TEMPLATE_ID);
 
   const { data: meData, isLoading: meLoading } = useQuery({
     queryKey: ["me"],
@@ -83,24 +94,29 @@ export function ProposalPreview({
   const originalEmpty = originalData ? isProposalDataEmpty(originalData) : true;
 
   if (compareMode) {
+    const originalTheme = getTemplateTheme(DEFAULT_TEMPLATE_ID);
+    const editedTheme = getTemplateTheme(selectedTemplateId ?? DEFAULT_TEMPLATE_ID);
+    const innerClass = "rounded-xl border border-slate-200 dark:border-slate-700 p-5 md:p-6 bg-slate-50/80 dark:bg-slate-900/40";
+    const editedInnerClass = "rounded-xl border-2 border-[#3b82f6]/30 p-5 md:p-6 bg-white dark:bg-slate-900/60 shadow-sm";
     return (
       <div className={cn("grid grid-cols-1 md:grid-cols-2 gap-0 md:gap-0 min-h-0", className)}>
         <div className="flex flex-col min-w-0 border-0 md:border-r border-border md:pr-6">
           <div className="shrink-0 mb-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/90 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg">
-              Original AI
+              Original (Default template)
             </span>
           </div>
           <div className="flex-1 min-h-[240px] md:min-h-0 overflow-auto transition-opacity duration-150">
             {originalEmpty ? (
               <EmptyPreviewPlaceholder className="min-h-[200px]" />
             ) : (
-              <div className="opacity-95">
+              <div className={cn("opacity-95", originalTheme?.wrapperClass)}>
                 <PreviewDocument
                   data={originalData!}
                   branding={branding}
                   documentLayout={false}
-                  className="rounded-xl border border-slate-200 dark:border-slate-700 p-5 md:p-6 bg-slate-50/80 dark:bg-slate-900/40"
+                  theme={originalTheme}
+                  className={innerClass}
                 />
               </div>
             )}
@@ -109,19 +125,20 @@ export function ProposalPreview({
         <div className="flex flex-col min-w-0 md:pl-6">
           <div className="shrink-0 mb-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#2563eb] bg-[#3b82f6]/10 dark:bg-[#3b82f6]/20 px-3 py-1.5 rounded-lg border border-[#3b82f6]/20">
-              Current Edited
+              Edited (Selected template)
             </span>
           </div>
           <div className="flex-1 min-h-[240px] md:min-h-0 overflow-auto transition-opacity duration-150">
             {currentEmpty ? (
               <EmptyPreviewPlaceholder className="min-h-[200px]" />
             ) : (
-              <div className="opacity-100">
+              <div className={cn("opacity-100", editedTheme?.wrapperClass)}>
                 <PreviewDocument
                   data={data!}
                   branding={branding}
                   documentLayout={false}
-                  className="rounded-xl border-2 border-[#3b82f6]/30 p-5 md:p-6 bg-white dark:bg-slate-900/60 shadow-sm"
+                  theme={editedTheme}
+                  className={editedInnerClass}
                 />
               </div>
             )}
@@ -141,6 +158,7 @@ export function ProposalPreview({
         data={data}
         branding={branding}
         documentLayout={documentLayout}
+        theme={theme}
         meLoading={meLoading}
         className={undefined}
       />
@@ -152,16 +170,19 @@ function PreviewDocument({
   data,
   branding,
   documentLayout,
+  theme,
   meLoading,
   className,
 }: {
   data: ProposalEditorFormData;
   branding: PreviewBranding | null;
   documentLayout: boolean;
+  theme: ProposalTemplateTheme | null;
   meLoading?: boolean;
   className?: string;
 }) {
   const [headerStuck, setHeaderStuck] = useState(false);
+  const t = theme ?? getTemplateTheme(DEFAULT_TEMPLATE_ID);
 
   useEffect(() => {
     if (!documentLayout) return;
@@ -186,65 +207,147 @@ function PreviewDocument({
 
   const content = (
     <div className="transition-opacity duration-200">
-      <PreviewContent data={data} />
+      <PreviewContent data={data} theme={t} />
     </div>
   );
 
   if (!documentLayout) {
-    return <div className={cn("proposal-preview-inner", className)}>{content}</div>;
+    return <div className={cn("proposal-preview-inner", t?.wrapperClass, className)}>{content}</div>;
   }
 
   return (
     <div
       data-preview-container
       className={cn(
-        "bg-white dark:bg-card shadow-xl border border-border rounded-2xl overflow-hidden max-w-4xl mx-auto print:shadow-none print:border",
+        "shadow-xl border rounded-2xl overflow-hidden max-w-4xl mx-auto print:shadow-none print:border bg-white dark:bg-card",
+        t?.wrapperClass,
         className
       )}
     >
       <header
         className={cn(
-          "p-6 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-card transition-all duration-200 print:break-inside-avoid",
-          headerStuck && "sticky top-0 z-10 shadow-md"
+          "border-b transition-all duration-200 print:break-inside-avoid",
+          t?.headerClass,
+          headerStuck && "sticky top-0 z-10 shadow-md",
+          t?.headerLayout === "bold" && "pb-4 border-b-4",
+          t?.headerLayout === "minimal" && "py-4 px-6",
+          t?.headerLayout !== "minimal" && t?.headerLayout !== "centered" && "p-6",
+          t?.headerLayout === "centered" && "py-8 px-6 text-center"
         )}
+        style={t?.accentColor && t?.headerLayout === "bold" ? { borderBottomColor: t.accentColor } : undefined}
       >
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-4 min-w-0">
+        {t?.headerLayout === "centered" ? (
+          <div className="flex flex-col items-center gap-2">
             {meLoading ? (
-              <Skeleton className="h-16 w-24 rounded-lg" />
+              <Skeleton className="h-14 w-20 rounded-lg" />
             ) : logoUrl ? (
-              <img
-                src={logoUrl}
-                alt="Logo"
-                className="h-16 w-auto max-w-[180px] object-contain object-left"
-              />
+              <img src={logoUrl} alt="Logo" className="h-14 w-auto max-w-[160px] object-contain" />
             ) : (
-              <div className="h-16 w-24 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-semibold text-slate-500">
+              <div className="h-14 w-20 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-semibold text-slate-500">
                 Logo
               </div>
             )}
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 truncate">
-              {companyName}
-            </h2>
+            <h2 className={cn("text-2xl font-bold", t?.headerClass)}>{companyName}</h2>
+            <time className="text-sm text-muted-foreground">{dateStr}</time>
           </div>
-          <time className="text-sm text-muted-foreground shrink-0">{dateStr}</time>
-        </div>
+        ) : t?.headerLayout === "minimal" ? (
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            {meLoading ? (
+              <Skeleton className="h-10 w-16 rounded" />
+            ) : logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="h-10 w-auto max-w-[120px] object-contain" />
+            ) : (
+              <div className="h-10 w-16 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-semibold text-slate-500">
+                Logo
+              </div>
+            )}
+            <h2 className={cn("text-lg font-semibold truncate", t?.headerClass)}>{companyName}</h2>
+            <time className="text-xs text-muted-foreground shrink-0">{dateStr}</time>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4 min-w-0">
+              {meLoading ? (
+                <Skeleton className="h-16 w-24 rounded-lg" />
+              ) : logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="h-16 w-auto max-w-[180px] object-contain object-left" />
+              ) : (
+                <div className="h-16 w-24 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-semibold text-slate-500">
+                  Logo
+                </div>
+              )}
+              <h2 className={cn("text-2xl font-bold truncate", t?.headerClass)}>{companyName}</h2>
+            </div>
+            <time className="text-sm text-muted-foreground shrink-0">{dateStr}</time>
+          </div>
+        )}
       </header>
 
-      <main className="p-6 md:p-8 lg:p-10 prose prose-slate dark:prose-invert prose-lg max-w-none print:p-6 prose-headings:font-semibold prose-h2:text-[#3b82f6] prose-h2:border-[#3b82f6]/30">
+      <main
+        className={cn(
+          "p-6 md:p-8 lg:p-10 prose prose-lg max-w-none print:p-6 prose-headings:font-semibold",
+          t?.mainClass,
+          "prose-slate dark:prose-invert"
+        )}
+      >
         {content}
       </main>
 
       {terms && (
-        <footer className="px-8 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 print:break-inside-avoid">
-          <p className="text-xs text-muted-foreground whitespace-pre-wrap">{terms}</p>
+        <footer className={cn("px-8 py-4 border-t print:break-inside-avoid", t?.footerClass)}>
+          <p className="text-xs whitespace-pre-wrap">{terms}</p>
         </footer>
       )}
     </div>
   );
 }
 
-function PreviewContent({ data }: { data: ProposalEditorFormData }) {
+function SectionWrapper({
+  theme,
+  children,
+  className,
+}: {
+  theme: ProposalTemplateTheme | null;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const style = theme?.sectionStyle ?? "default";
+  if (style === "cards") {
+    return (
+      <div className={cn("rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 p-5 shadow-sm", className)}>
+        {children}
+      </div>
+    );
+  }
+  if (style === "bordered") {
+    return (
+      <div
+        className={cn("pl-5 border-l-4", className)}
+        style={{ borderColor: theme?.accentColor ?? "#3b82f6" }}
+      >
+        {children}
+      </div>
+    );
+  }
+  return <div className={className}>{children}</div>;
+}
+
+function PreviewContent({
+  data,
+  theme,
+}: {
+  data: ProposalEditorFormData;
+  theme: ProposalTemplateTheme | null;
+}) {
+  const t = theme ?? getTemplateTheme(DEFAULT_TEMPLATE_ID);
+  const accentColor = t?.accentColor ?? "#3b82f6";
+  const headingClass = t?.headingClass ?? "text-[#3b82f6] border-[#3b82f6]/30 font-semibold";
+  const bodyClass = t?.bodyClass ?? "text-slate-700 dark:text-slate-300";
+  const pricingStyle = t?.pricingStyle ?? "default";
+  const roadmapStyle = t?.roadmapStyle ?? "default";
+  const contentSpacing = t?.contentSpacing ?? "default";
+  const spaceY = contentSpacing === "compact" ? "space-y-4" : contentSpacing === "spacious" ? "space-y-12" : "space-y-8";
+
   const acceptedModules = (data.ai_enhanced_modules ?? []).filter((m) => m.accepted);
   const totalByOption = useMemo(() => {
     return (data.pricing_options ?? []).map((opt) => {
@@ -263,92 +366,126 @@ function PreviewContent({ data }: { data: ProposalEditorFormData }) {
   const useStructuredView = !data.final_proposal_text?.trim() && hasStructuredData;
 
   if (useStructuredView) {
+    const pricingCompact = pricingStyle === "compact";
+    const pricingFilled = pricingStyle === "filled";
+    const pricingOutline = pricingStyle === "outline";
     return (
-      <div className="space-y-8">
-        <section>
-          <h2 className="text-xl font-semibold text-[#3b82f6] border-b border-[#3b82f6]/30 pb-2 mb-4">
-            Client Summary
-          </h2>
-          <p className="leading-relaxed text-slate-700 dark:text-slate-300">
-            {data.client_summary || "No summary provided."}
-          </p>
-        </section>
+      <div className={spaceY}>
+        <SectionWrapper theme={t}>
+          <section>
+            <h2 className={cn("text-xl border-b pb-2 mb-4", headingClass)}>
+              Client Summary
+            </h2>
+            <p className={cn("leading-relaxed", bodyClass)}>
+              {data.client_summary || "No summary provided."}
+            </p>
+          </section>
+        </SectionWrapper>
 
         {acceptedModules.length > 0 && (
-          <section>
-            <h2 className="text-xl font-semibold text-[#3b82f6] border-b border-[#3b82f6]/30 pb-2 mb-4">
-              Proposed Modules
-            </h2>
-            <ul className="list-disc list-inside space-y-1 text-slate-700 dark:text-slate-300">
-              {acceptedModules.map((m, i) => (
-                <li key={i}>
-                  <strong>{m.enhanced_name}</strong> – {m.why_better || ""}
-                </li>
-              ))}
-            </ul>
-          </section>
+          <SectionWrapper theme={t}>
+            <section>
+              <h2 className={cn("text-xl border-b pb-2 mb-4", headingClass)}>
+                Proposed Modules
+              </h2>
+              <ul className={cn("list-disc list-inside space-y-1", bodyClass)}>
+                {acceptedModules.map((m, i) => (
+                  <li key={i}>
+                    <strong>{m.enhanced_name}</strong> – {m.why_better || ""}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </SectionWrapper>
         )}
 
         {(data.phased_roadmap?.length ?? 0) > 0 && (
-          <section>
-            <h2 className="text-xl font-semibold text-[#3b82f6] border-b border-[#3b82f6]/30 pb-2 mb-4">
-              Phased Roadmap
-            </h2>
-            <RoadmapTimeline phases={data.phased_roadmap!} />
-          </section>
+          <SectionWrapper theme={t}>
+            <section>
+              <h2 className={cn("text-xl border-b pb-2 mb-4", headingClass)}>
+                Phased Roadmap
+              </h2>
+              <RoadmapTimeline phases={data.phased_roadmap!} variant={roadmapStyle} accentColor={accentColor} />
+            </section>
+          </SectionWrapper>
         )}
 
         {totalByOption.length > 0 && (
-          <section>
-            <h2 className="text-xl font-semibold text-[#3b82f6] border-b border-[#3b82f6]/30 pb-2 mb-4">
-              Pricing Options
-            </h2>
-            <div className="space-y-6">
-              {totalByOption.map((opt, i) => (
-                <div
-                  key={i}
-                  className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md"
-                >
-                  <div className="bg-slate-100 dark:bg-slate-800 px-4 py-2 font-semibold text-slate-900 dark:text-slate-100">
-                    {opt.name}
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-800/50">
-                          <th className="text-left p-3 font-medium text-slate-700 dark:text-slate-300">
-                            Item
-                          </th>
-                          <th className="text-right p-3 font-medium text-slate-700 dark:text-slate-300">
-                            Cost
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {opt.breakdown.map((row, j) => (
+          <SectionWrapper theme={t}>
+            <section>
+              <h2 className={cn("text-xl border-b pb-2 mb-4", headingClass)}>
+                Pricing Options
+              </h2>
+              <div className={cn("space-y-6", pricingCompact && "space-y-4")}>
+                {totalByOption.map((opt, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      "overflow-hidden",
+                      !pricingOutline && "rounded-xl border border-slate-200 dark:border-slate-700 shadow-md",
+                      pricingOutline && "rounded-lg border border-slate-200 dark:border-slate-700"
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "font-semibold",
+                        pricingCompact ? "px-3 py-1.5 text-sm" : "px-4 py-2",
+                        pricingFilled ? "text-white" : "text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800"
+                      )}
+                      style={pricingFilled ? { backgroundColor: accentColor } : undefined}
+                    >
+                      {opt.name}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className={cn("w-full", pricingCompact ? "text-xs" : "text-sm")}>
+                        <thead>
                           <tr
-                            key={j}
-                            className="border-t border-slate-200 dark:border-slate-700 hover:bg-muted/50 even:bg-slate-50/50 dark:even:bg-slate-900/30"
+                            className={cn(
+                              pricingFilled ? "text-white/90" : "bg-slate-50 dark:bg-slate-800/50",
+                              pricingOutline && "border-b border-slate-200 dark:border-slate-700"
+                            )}
+                            style={pricingFilled ? { backgroundColor: `${accentColor}cc` } : undefined}
                           >
-                            <td className="p-3">{row.item}</td>
-                            <td className="p-3 text-right font-medium">
-                              ${(row.cost_usd ?? 0).toLocaleString()}
-                            </td>
+                            <th className={cn("text-left font-medium text-slate-700 dark:text-slate-300", pricingCompact ? "p-2" : "p-3")}>
+                              Item
+                            </th>
+                            <th className={cn("text-right font-medium text-slate-700 dark:text-slate-300", pricingCompact ? "p-2" : "p-3")}>
+                              Cost
+                            </th>
                           </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-[#3b82f6] bg-[#3b82f6]/10 font-bold">
-                          <td className="p-3">Total</td>
-                          <td className="p-3 text-right">${Math.round(opt.total).toLocaleString()}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {opt.breakdown.map((row, j) => (
+                            <tr
+                              key={j}
+                              className="border-t border-slate-200 dark:border-slate-700 hover:bg-muted/50 even:bg-slate-50/50 dark:even:bg-slate-900/30"
+                            >
+                              <td className={pricingCompact ? "p-2" : "p-3"}>{row.item}</td>
+                              <td className={cn("text-right font-medium", pricingCompact ? "p-2" : "p-3")}>
+                                ${(row.cost_usd ?? 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr
+                            className="border-t-2 font-bold"
+                            style={{
+                              borderColor: accentColor,
+                              backgroundColor: `${accentColor}18`,
+                            }}
+                          >
+                            <td className={pricingCompact ? "p-2" : "p-3"}>Total</td>
+                            <td className={cn("text-right", pricingCompact ? "p-2" : "p-3")}>${Math.round(opt.total).toLocaleString()}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
+          </SectionWrapper>
         )}
 
         {!hasStructuredData && (
@@ -383,30 +520,40 @@ function PreviewContent({ data }: { data: ProposalEditorFormData }) {
 
   const markdownComponents = {
     h1: ({ children }: { children?: React.ReactNode }) => (
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 border-b-2 border-[#3b82f6] pb-2 mb-4">
+      <h1
+        className={cn("text-2xl font-bold border-b-2 pb-2 mb-4", headingClass)}
+        style={{ borderColor: accentColor }}
+      >
         {children}
       </h1>
     ),
     h2: ({ children }: { children?: React.ReactNode }) => (
-      <h2 className="text-xl font-semibold text-[#3b82f6] mt-8 mb-2 border-l-4 border-[#3b82f6] pl-3">
+      <h2
+        className={cn("text-xl font-semibold mt-8 mb-2 border-l-4 pl-3", headingClass)}
+        style={{ borderColor: accentColor }}
+      >
         {children}
       </h2>
     ),
     h3: ({ children }: { children?: React.ReactNode }) => (
-      <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mt-6 mb-2">
-        {children}
-      </h3>
+      <h3 className={cn("text-lg font-semibold mt-6 mb-2", bodyClass)}>{children}</h3>
     ),
     p: ({ children }: { children?: React.ReactNode }) => (
-      <p className="leading-relaxed text-slate-700 dark:text-slate-300 mb-3">{children}</p>
+      <p className={cn("leading-relaxed mb-3", bodyClass)}>{children}</p>
     ),
     ul: ({ children }: { children?: React.ReactNode }) => (
-      <ul className="list-disc list-inside space-y-1 mb-4 text-slate-700 dark:text-slate-300 [&>li]:marker:text-[#3b82f6]">
+      <ul
+        className={cn("list-disc list-inside space-y-1 mb-4", bodyClass)}
+        style={{ listStyleColor: accentColor } as React.CSSProperties}
+      >
         {children}
       </ul>
     ),
     ol: ({ children }: { children?: React.ReactNode }) => (
-      <ol className="list-decimal list-inside space-y-1 mb-4 text-slate-700 dark:text-slate-300 [&>li]:marker:font-semibold [&>li]:marker:text-[#3b82f6]">
+      <ol
+        className={cn("list-decimal list-inside space-y-1 mb-4 [&>li]:marker:font-semibold", bodyClass)}
+        style={{ listStyleColor: accentColor } as React.CSSProperties}
+      >
         {children}
       </ol>
     ),
@@ -442,6 +589,8 @@ function PreviewContent({ data }: { data: ProposalEditorFormData }) {
       />
     ),
   };
+
+  if (typeof markdown !== "string") return null;
 
   return (
     <ReactMarkdown components={markdownComponents}>{markdown}</ReactMarkdown>

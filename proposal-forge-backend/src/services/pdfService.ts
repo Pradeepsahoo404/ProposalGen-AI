@@ -40,6 +40,11 @@ export type BrandingForPdf = {
   termsTemplate?: string | null;
 };
 
+export type TemplateStyleForPdf = {
+  primaryColor?: string;
+  fontFamily?: string;
+};
+
 function buildContent(data: ProposalDataForPdf, branding: BrandingForPdf): object[] {
   const content: object[] = [];
   const blue = "#3b82f6";
@@ -143,11 +148,13 @@ function buildContent(data: ProposalDataForPdf, branding: BrandingForPdf): objec
 
 export function generatePdf(
   proposalData: ProposalDataForPdf,
-  branding: BrandingForPdf = {}
+  branding: BrandingForPdf = {},
+  templateStyle: TemplateStyleForPdf = {}
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
       const content = buildContent(proposalData, branding);
+      const primaryColor = templateStyle.primaryColor ?? "#3b82f6";
       const docDefinition = {
         pageSize: "A4",
         pageMargins: [40, 60, 40, 60],
@@ -155,7 +162,7 @@ export function generatePdf(
         styles: {
           companyName: { fontSize: 18, bold: true },
           date: { fontSize: 10, color: "#64748b" },
-          sectionHeader: { fontSize: 14, bold: true, color: "#3b82f6" },
+          sectionHeader: { fontSize: 14, bold: true, color: primaryColor },
           subheader: { fontSize: 12, bold: true },
           body: { fontSize: 10, lineHeight: 1.4 },
           tableHeader: { fontSize: 9, bold: true },

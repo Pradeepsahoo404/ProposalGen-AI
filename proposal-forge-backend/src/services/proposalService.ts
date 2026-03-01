@@ -219,6 +219,7 @@ export async function duplicate(id: string, user: AuthUser): Promise<ProposalLis
     userId: user.id,
     status: "draft",
     content: existing.content,
+    templateId: (existing as { templateId?: string }).templateId ?? "modern-blue",
   });
   return {
     id: String(doc._id),
@@ -245,6 +246,7 @@ export async function create(
     content?: Record<string, unknown>;
     clientName?: string;
     clientInput?: string;
+    templateId?: string;
   },
   user: AuthUser
 ) {
@@ -255,9 +257,12 @@ export async function create(
     content: data.content,
     clientName: data.clientName ?? "",
     clientInput: data.clientInput ?? "",
+    templateId: data.templateId && typeof data.templateId === "string" ? data.templateId : "modern-blue",
   });
   return { id: doc._id.toString(), title: doc.title, status: doc.status, userId: user.id };
 }
+
+export type UpdateResult = { ok: true; doc: unknown } | { ok: false; reason: "not_found" | "forbidden" };
 
 export async function update(
   id: string,
@@ -266,21 +271,39 @@ export async function update(
     status: string;
     content: Record<string, unknown>;
     clientName: string;
+    templateId: string;
   }>,
   user: AuthUser
-) {
+): Promise<UpdateResult> {
   const existing = await Proposal.findById(id);
-  if (!existing) return null;
+  if (!existing) return { ok: false, reason: "not_found" };
   const ownerId = existing.userId.toString();
-  if (user.role !== "admin" && ownerId !== user.id) return null;
+  if (user.role !== "admin" && ownerId !== user.id) return { ok: false, reason: "not_found" };
   if (data.title !== undefined) existing.title = data.title;
   if (data.status !== undefined && ["draft", "sent", "accepted"].includes(data.status)) {
     existing.status = data.status as "draft" | "sent" | "accepted";
   }
   if (data.content !== undefined) existing.content = data.content;
   if (data.clientName !== undefined) (existing as { clientName?: string }).clientName = data.clientName;
+  if (data.templateId !== undefined && typeof data.templateId === "string") {
+    (existing as { templateId?: string }).templateId = data.templateId;
+  }
   await existing.save();
-  return existing.toObject();
+  return { ok: true, doc: existing.toObject() };
+}
+
+export async function updateTemplate(
+  id: string,
+  templateId: string,
+  user: AuthUser
+): Promise<ProposalDoc | null> {
+  const existing = await Proposal.findById(id);
+  if (!existing) return null;
+  const ownerId = existing.userId.toString();
+  if (user.role !== "admin" && ownerId !== user.id) return null;
+  (existing as { templateId?: string }).templateId = templateId;
+  await existing.save();
+  return existing.toObject() as unknown as ProposalDoc;
 }
 
 export async function remove(id: string, user: AuthUser): Promise<boolean> {
@@ -341,11 +364,14 @@ export async function shareProposal(
     proposal = existing;
   } else if (options.proposalData) {
     const title = options.proposalData.title || "Proposal";
+    const content = options.proposalData.content as Record<string, unknown> | undefined;
+    const templateId = content && typeof content.templateId === "string" ? content.templateId : "modern-blue";
     const created = await Proposal.create({
       title,
       userId: user.id,
       status: "draft",
       content: options.proposalData.content,
+      templateId,
     });
     proposal = created;
   }

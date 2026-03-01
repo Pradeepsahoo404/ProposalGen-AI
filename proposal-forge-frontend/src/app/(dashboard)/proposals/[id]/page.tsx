@@ -17,6 +17,7 @@ type ProposalDoc = {
   status: string;
   content?: unknown;
   clientName?: string;
+  templateId?: string;
 };
 
 export default function ProposalEditPage() {
@@ -59,6 +60,10 @@ export default function ProposalEditPage() {
   }
 
   const initialFormData: ProposalEditorFormData = contentToEditorFormData(data.content);
+  const contentObj = data.content && typeof data.content === "object" ? (data.content as Record<string, unknown>) : {};
+  const initialSelectedTemplateId =
+    (typeof data.templateId === "string" ? data.templateId : undefined) ??
+    (typeof contentObj.selectedTemplateId === "string" ? contentObj.selectedTemplateId : undefined);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-slate-50/80 to-background dark:from-slate-950/80 dark:to-background">
@@ -81,6 +86,7 @@ export default function ProposalEditPage() {
         <ModuleEditor
           proposalId={id}
           initialFormData={initialFormData}
+          initialSelectedTemplateId={initialSelectedTemplateId}
           proposalTitle={data.title}
           proposalStatus={data.status}
         />

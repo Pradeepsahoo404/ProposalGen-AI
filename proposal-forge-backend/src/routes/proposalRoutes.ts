@@ -16,6 +16,7 @@ router.get("/:id", proposalController.getProposalById);
 router.post("/:id/duplicate", proposalController.duplicateProposal);
 router.post("/", proposalController.createProposal);
 router.put("/:id", proposalController.updateProposal);
+router.put("/:id/template", proposalController.putTemplateHandler);
 router.delete("/:id", proposalController.deleteProposal);
 
 export default router;
